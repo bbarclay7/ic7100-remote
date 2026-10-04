@@ -8,7 +8,8 @@ non-obvious parts that justify a dedicated library:
   0x20 like the IC-7300/7610. Earlier guesses NG'd the radio.
 * 0x0A = Memory-to-VFO, 0x0B = Memory clear. Earlier code had these swapped.
 * CALL channels are memory channels 106-109 (144-C1, 144-C2, 430-C1, 430-C2);
-  the older 0x08 0xA0 opcode actually selects Memory Bank A.
+  the older 0x08 0xA0 opcode is not a CALL selector: it selects a memory bank
+  (A-E, numbered from 1) and needs the bank number as data.
 * 0x07 0xD0/0xD1 (Main/Sub band) is for dual-receiver radios (IC-9100). The
   IC-7100 is single-receiver and has no such concept — opcodes removed.
 """
@@ -849,8 +850,8 @@ class IC7100:
         With no argument, picks the right band-1 call channel based on the
         current frequency: <300 MHz -> 144-C1, else 430-C1.
 
-        Earlier code used 0x08 0xA0, which actually selects Memory Bank A —
-        the IC-7100's CALL channels are memory channels 106-109.
+        Earlier code used 0x08 0xA0, which selects a memory bank rather than a
+        CALL channel — the IC-7100's CALL channels are memory channels 106-109.
         """
         if not which:
             which = '144-C1' if (self.freq_hz or 0) < 300_000_000 else '430-C1'

@@ -74,10 +74,10 @@ Manual page references (where given) are to the IC-7100 Full Manual.
 
 | Symbolic name | Opcode | Manual | Notes |
 |---|---|---|---|
-| `set/get CTCSS TX freq` | `0x1B 0x00` | — | 2-byte BCD tenths-of-Hz (e.g. 88.5 -> `08 85`). |
-| `set/get CTCSS RX freq` | `0x1B 0x01` | — | Same encoding. |
-| `set/get CTCSS TX on` | `0x16 0x43` | — | 1 byte flag. |
-| `set/get CTCSS RX on` | `0x16 0x42` | — | 1 byte flag. |
+| `set/get repeater (TX) tone freq` | `0x1B 0x00` | — | **3-byte** BCD tenths of Hz, `00 hh ll`: 127.3 Hz is `00 12 73`. The reply has the same layout. |
+| `set/get tone-squelch freq` | `0x1B 0x01` | — | Same encoding. |
+| `set/get TONE on` | `0x16 0x42` | — | 1 byte flag. Repeater tone encode ("TONE" on the display). |
+| `set/get TSQL on` | `0x16 0x43` | — | 1 byte flag. Tone squelch ("TSQL" on the display). On the IC-7100 TONE and TSQL are exclusive: switching one on switches the other off. |
 
 ### DTCS
 
@@ -209,10 +209,13 @@ To select a CALL channel, issue `0x08 [hi_bcd] [lo_bcd]` with the channel
 number — exactly like any other memory channel. There is no separate CALL
 opcode group.
 
-`0x08 0xA0` is **Memory Bank A select** on radios that have memory banks.
-Earlier code used `0x08 0xA0` thinking it was the call-channel selector;
-the IC-7100 in fact doesn't have user-visible memory banks so the
-behavior was nondeterministic.
+The IC-7100 does have memory banks (A-E). `0x08 0xA0 [bank]` selects one,
+where `bank` is a 2-byte BCD number **counted from 1**: A is `00 01`, E is
+`00 05`, and `00 04` selects D. A bare `0x08 0xA0` with no bank is answered
+with NG, and no command that reads back the active bank is known, so a client
+has to remember what it last selected. Earlier code used `0x08 0xA0` as a
+CALL-channel selector; the CALL channels are just memory channels 106-109
+(above).
 
 ### 4. Main / Sub band opcodes
 
