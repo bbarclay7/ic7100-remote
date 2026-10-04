@@ -273,9 +273,11 @@ class RadioServer:
             'ptt_active':        bool(getattr(r, 'transmitting', False)),
             'smeter':            int(getattr(r, 'smeter', 0) or 0),
             'squelch_open':      bool(getattr(r, 'squelch_open', True)),
-            'po':                int(getattr(r, 'po', 0) or 0),
-            'swr':               int(getattr(r, 'swr', 0) or 0),
-            'alc':               int(getattr(r, 'alc', 0) or 0),
+            # TX-only meters: they aren't read while receiving, so without this
+            # the last transmit's value would sit on screen indefinitely.
+            'po':                _tx_only(r, 'po'),
+            'swr':               _tx_only(r, 'swr'),
+            'alc':               _tx_only(r, 'alc'),
             # CTCSS / DTCS
             'ctcss_tx_hz':       float(getattr(r, 'ctcss_tx_hz', 0.0) or 0.0),
             'ctcss_rx_hz':       float(getattr(r, 'ctcss_rx_hz', 0.0) or 0.0),
@@ -433,6 +435,10 @@ def _cmd_filter(r, p):
         return _fail('filter: idx required')
     ok = r.set_filter(int(idx))
     return _ok({'filter': int(idx)}) if ok else _fail('set_filter NG')
+
+
+def _tx_only(r, attr: str) -> int:
+    return int(getattr(r, attr, 0) or 0) if getattr(r, 'transmitting', False) else 0
 
 
 def _cmd_ptt(r, p):

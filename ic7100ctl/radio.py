@@ -356,7 +356,7 @@ class IC7100:
         ok = self._set_ok(0x1c, subcmd=0x00,
                           data=bytes([0x01 if on else 0x00]))
         if ok:
-            self.transmitting = on
+            self._set_transmitting(on)
         if not on and self._we_set_data_mode:
             self.set_data_mode(False)
             if self.split and self.swap_vfo():
@@ -365,10 +365,18 @@ class IC7100:
             self._we_set_data_mode = False
         return ok
 
+    def _set_transmitting(self, on: bool) -> None:
+        """Record the TX state. Po/SWR/ALC are only read while transmitting, so
+        they keep their last value in between; wipe them whenever the state
+        flips so a new key-up never starts by showing the previous transmit."""
+        if bool(on) != self.transmitting:
+            self.po = self.swr = self.alc = 0
+        self.transmitting = bool(on)
+
     def get_ptt(self) -> Optional[bool]:
         resp = self._txn(0x1c, subcmd=0x00)
         if resp and len(resp) >= 3 and resp[0] == 0x1c and resp[1] == 0x00:
-            self.transmitting = bool(resp[2])
+            self._set_transmitting(resp[2])
             return self.transmitting
         return None
 

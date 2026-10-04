@@ -198,3 +198,22 @@ class ToneAndTsqlTests(unittest.TestCase):
         self.r.set_ctcss(rx_on=True)                          # old name for TSQL
         self.assertEqual(self.t.last_frame()[4:6], b'\x16\x43')
         self.assertEqual((self.r.ctcss_tx_on, self.r.ctcss_rx_on), (True, True))
+
+
+class StaleTxMeterTests(unittest.TestCase):
+    def test_tx_meters_are_wiped_when_the_transmit_state_flips(self):
+        t = MockCIVTransport(); r = IC7100(t)
+        r.set_ptt(True)
+        r.po, r.alc, r.swr = 68, 134, 5            # readings during transmit 1
+        r.set_ptt(False)
+        self.assertEqual((r.po, r.alc, r.swr), (0, 0, 0))
+        r.po = 99                                   # stray value while receiving
+        r.set_ptt(True)                             # transmit 2 must start from zero
+        self.assertEqual(r.po, 0)
+
+    def test_get_ptt_seeing_the_end_of_a_transmit_also_wipes(self):
+        t = MockCIVTransport(); r = IC7100(t)
+        r.transmitting = True; r.po = 80
+        t.set_response(0x1c, 0x00, b'\x1c\x00\x00')   # radio says: not transmitting
+        r.get_ptt()
+        self.assertEqual((r.transmitting, r.po), (False, 0))

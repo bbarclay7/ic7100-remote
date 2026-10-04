@@ -116,6 +116,13 @@ class ServerSmokeTests(unittest.TestCase):
         self.assertEqual((st['tone_on'], st['tsql_on']), (True, True))
         self.assertEqual((st['ctcss_tx_on'], st['ctcss_rx_on']), (True, True))  # old keys, same flags
 
+    def test_tx_meters_read_zero_when_not_transmitting(self):
+        self.radio.po, self.radio.swr, self.radio.alc = 227, 40, 30
+        self.assertFalse(self.radio.transmitting)
+        self.server._refresh_state()                # don't depend on the poll timer
+        st = self._get_json('/ic7100/status')
+        self.assertEqual((st['po'], st['swr'], st['alc']), (0, 0, 0))
+
     def test_post_mode(self):
         r = self._post_json('/ic7100cmd', {'cmd': 'mode', 'mode': 'FM'})
         self.assertTrue(r['ok'])
