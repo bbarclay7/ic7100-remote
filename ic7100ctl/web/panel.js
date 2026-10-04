@@ -681,7 +681,7 @@ function icCtcssApply(which) {
   if (which === 'tx') {
     var hz = parseFloat(document.getElementById('ic-ctcss-tx').value);
     var on = document.getElementById('ic-ctcss-tx-on').checked;
-    icCmd('ctcss', {tx_hz: isNaN(hz) ? 0 : hz, tx_on: on});
+    icCmd('ctcss', {tx_hz: isNaN(hz) ? 0 : hz, tone_on: on});
   } else {
     var hzR = parseFloat(document.getElementById('ic-ctcss-rx').value);
     icCmd('ctcss', {rx_hz: isNaN(hzR) ? 0 : hzR});
@@ -884,7 +884,7 @@ function pollStatus() {
     });
     var txOnBox = document.getElementById('ic-ctcss-tx-on');
     if (txOnBox && document.activeElement !== txOnBox) {
-      txOnBox.checked = !!s.ctcss_tx_on;
+      txOnBox.checked = !!s.tone_on;
     }
 
     // HF panel sync

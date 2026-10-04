@@ -167,3 +167,34 @@ class CtcssFrequencyTests(unittest.TestCase):
         self.r.get_ctcss()
         self.assertAlmostEqual(self.r.ctcss_tx_hz, 127.3)
         self.assertAlmostEqual(self.r.ctcss_rx_hz, 88.5)
+
+
+class ToneAndTsqlTests(unittest.TestCase):
+    """CI-V 16 42 is TONE, 16 43 is TSQL (they were wired the other way round)."""
+
+    def setUp(self):
+        self.t = MockCIVTransport()
+        self.r = IC7100(self.t)
+
+    def test_tone_on_uses_16_42(self):
+        self.assertTrue(self.r.set_ctcss(tone_on=True))
+        self.assertEqual(self.t.last_frame()[4:7], b'\x16\x42\x01')
+        self.assertTrue(self.r.tone_on and not self.r.tsql_on)
+
+    def test_tsql_on_uses_16_43(self):
+        self.assertTrue(self.r.set_ctcss(tsql_on=True))
+        self.assertEqual(self.t.last_frame()[4:7], b'\x16\x43\x01')
+        self.assertTrue(self.r.tsql_on and not self.r.tone_on)
+
+    def test_get_reads_each_flag_from_its_own_opcode(self):
+        self.t.set_response(0x16, 0x42, b'\x16\x42\x01')   # TONE on
+        self.t.set_response(0x16, 0x43, b'\x16\x43\x00')   # TSQL off
+        self.r.get_ctcss()
+        self.assertEqual((self.r.tone_on, self.r.tsql_on), (True, False))
+
+    def test_old_names_still_work(self):
+        self.r.set_ctcss(tx_on=True)                          # old name for TONE
+        self.assertEqual(self.t.last_frame()[4:6], b'\x16\x42')
+        self.r.set_ctcss(rx_on=True)                          # old name for TSQL
+        self.assertEqual(self.t.last_frame()[4:6], b'\x16\x43')
+        self.assertEqual((self.r.ctcss_tx_on, self.r.ctcss_rx_on), (True, True))
