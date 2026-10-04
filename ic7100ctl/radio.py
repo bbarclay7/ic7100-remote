@@ -25,7 +25,7 @@ from typing import Optional
 from .civ import (
     CIVTransport, OK,
     bcd3_to_value, bcd_to_freq, bcd_to_rit_offset, bcd_to_tone,
-    freq_to_bcd, pct_to_bcd3, rit_offset_to_bcd, tone_to_bcd,
+    freq_to_bcd, pct_to_bcd3, rit_offset_to_bcd, tone_to_bcd3,
 )
 
 
@@ -416,12 +416,14 @@ class IC7100:
 
     def get_ctcss(self):
         """Read full CTCSS state. Returns (tx_hz, rx_hz, tx_on, rx_on)."""
+        # The radio answers with three BCD bytes (00 hh ll = tenths of Hz),
+        # e.g. 127.3 Hz -> 1B 00 00 12 73.
         r = self._txn(0x1b, subcmd=0x00)            # TX tone freq
-        if r and len(r) >= 4 and r[0] == 0x1b and r[1] == 0x00:
-            self.ctcss_tx_hz = bcd_to_tone(r[2:4])
+        if r and len(r) >= 5 and r[0] == 0x1b and r[1] == 0x00:
+            self.ctcss_tx_hz = bcd_to_tone(r[3:5])
         r = self._txn(0x1b, subcmd=0x01)            # RX tone squelch freq
-        if r and len(r) >= 4 and r[0] == 0x1b and r[1] == 0x01:
-            self.ctcss_rx_hz = bcd_to_tone(r[2:4])
+        if r and len(r) >= 5 and r[0] == 0x1b and r[1] == 0x01:
+            self.ctcss_rx_hz = bcd_to_tone(r[3:5])
         r = self._txn(0x16, subcmd=0x43)            # TX tone encode enable
         if r and len(r) >= 3 and r[0] == 0x16 and r[1] == 0x43:
             self.ctcss_tx_on = bool(r[2])
@@ -437,12 +439,12 @@ class IC7100:
                   rx_on: Optional[bool] = None) -> bool:
         ok = True
         if tx_hz is not None:
-            if self._set_ok(0x1b, subcmd=0x00, data=tone_to_bcd(tx_hz)):
+            if self._set_ok(0x1b, subcmd=0x00, data=tone_to_bcd3(tx_hz)):
                 self.ctcss_tx_hz = tx_hz
             else:
                 ok = False
         if rx_hz is not None:
-            if self._set_ok(0x1b, subcmd=0x01, data=tone_to_bcd(rx_hz)):
+            if self._set_ok(0x1b, subcmd=0x01, data=tone_to_bcd3(rx_hz)):
                 self.ctcss_rx_hz = rx_hz
             else:
                 ok = False

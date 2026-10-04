@@ -146,3 +146,24 @@ class SmokeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CtcssFrequencyTests(unittest.TestCase):
+    """The radio takes and returns CTCSS tones as 3 BCD bytes (00 hh ll)."""
+
+    def setUp(self):
+        self.t = MockCIVTransport()
+        self.r = IC7100(self.t)
+
+    def test_set_sends_three_bytes(self):
+        self.assertTrue(self.r.set_ctcss(tx_hz=127.3))
+        self.assertEqual(self.t.last_frame()[4:9], b'\x1b\x00\x00\x12\x73')
+        self.assertTrue(self.r.set_ctcss(rx_hz=88.5))
+        self.assertEqual(self.t.last_frame()[4:9], b'\x1b\x01\x00\x08\x85')
+
+    def test_get_reads_three_bytes(self):
+        self.t.set_response(0x1b, 0x00, b'\x1b\x00\x00\x12\x73')
+        self.t.set_response(0x1b, 0x01, b'\x1b\x01\x00\x08\x85')
+        self.r.get_ctcss()
+        self.assertAlmostEqual(self.r.ctcss_tx_hz, 127.3)
+        self.assertAlmostEqual(self.r.ctcss_rx_hz, 88.5)

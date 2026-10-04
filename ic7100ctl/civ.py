@@ -58,6 +58,12 @@ def tone_to_bcd(hz: float) -> bytes:
     return bytes([(d3 << 4) | d2, (d1 << 4) | d0])
 
 
+def tone_to_bcd3(hz: float) -> bytes:
+    """CTCSS tone as the radio's 3-byte BCD (tenths of Hz): 127.3 -> 00 12 73.
+    This is what 1B 00 / 1B 01 take and return."""
+    return b'\x00' + tone_to_bcd(hz)
+
+
 def bcd_to_tone(data: bytes) -> float:
     """Decode 2-byte BCD tone to Hz."""
     hi = (data[0] >> 4) * 1000 + (data[0] & 0x0f) * 100

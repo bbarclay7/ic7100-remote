@@ -5,7 +5,7 @@ import unittest
 from ic7100ctl.civ import (
     CIVTransport, PREAMBLE, END, CTRL_ADDR,
     freq_to_bcd, bcd_to_freq,
-    tone_to_bcd, bcd_to_tone,
+    tone_to_bcd, tone_to_bcd3, bcd_to_tone,
     rit_offset_to_bcd, bcd_to_rit_offset,
     pct_to_bcd3, bcd3_to_value,
 )
@@ -112,3 +112,9 @@ class FairnessFlagsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ToneThreeByteTests(unittest.TestCase):
+    def test_tone_to_bcd3_has_a_leading_zero_byte(self):
+        self.assertEqual(tone_to_bcd3(127.3), b'\x00\x12\x73')
+        self.assertEqual(tone_to_bcd3(88.5), b'\x00\x08\x85')
