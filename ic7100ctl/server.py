@@ -857,6 +857,8 @@ def _make_handler(server: RadioServer):
                 self.send_response(200)
                 self.send_header('Content-Type', ctype)
                 self.send_header('Content-Length', str(len(body)))
+                # Revalidate every load so a redeploy shows up on a plain reload.
+                self.send_header('Cache-Control', 'no-cache')
                 self.end_headers()
                 self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError):

@@ -133,6 +133,12 @@ class ServerSmokeTests(unittest.TestCase):
             del self.transport.consecutive_timeouts
             self.server._refresh_state()
 
+    def test_static_files_are_revalidated_on_every_load(self):
+        for path in ('/', '/web/panel.js'):
+            with urllib.request.urlopen(f'{self.base}{path}', timeout=2) as r:
+                self.assertEqual(r.status, 200, path)
+                self.assertEqual(r.headers.get('Cache-Control'), 'no-cache', path)
+
     def test_post_mode(self):
         r = self._post_json('/ic7100cmd', {'cmd': 'mode', 'mode': 'FM'})
         self.assertTrue(r['ok'])
