@@ -145,6 +145,7 @@ class CIVTransport:
         self._serial = None
         self._lock = threading.Lock()
         self.connected = False
+        self.consecutive_timeouts = 0   # CI-V commands in a row with no answer
         # Caller-owned abort signal — set by user-command path, checked by
         # the poll loop between reads. Exposed so callers can wait/clear it.
         self.user_cmd_pending = threading.Event()
@@ -227,16 +228,37 @@ class CIVTransport:
                                     and buf[idx + 2] == self.ctrl_addr):
                                 end = buf.find(END, idx + 4)
                                 if end != -1:
+                                    self._answered()
                                     return buf[idx + 4:end]
                             idx += 1
                     else:
                         time.sleep(0.002)
-                print(f"[CIV] Timeout on cmd 0x{frame[4]:02x}", flush=True)
+                self._timed_out(frame[4])
                 return None
             except Exception as e:
                 print(f"[CIV] Transact error: {e}", flush=True)
                 self.connected = False
                 return None
+
+    # A radio that is switched off times out on every command, several times a
+    # second. Log the first timeout, one line when it is clearly not answering,
+    # and one when it answers again, instead of thousands of lines an hour.
+    QUIET_AFTER_TIMEOUTS = 5
+
+    def _timed_out(self, cmd: int) -> None:
+        self.consecutive_timeouts += 1
+        n = self.consecutive_timeouts
+        if n == 1:
+            print(f"[CIV] Timeout on cmd 0x{cmd:02x}", flush=True)
+        elif n == self.QUIET_AFTER_TIMEOUTS:
+            print("[CIV] radio is not answering (switched off?); polling slows "
+                  "down and further timeouts are not logged until it answers",
+                  flush=True)
+
+    def _answered(self) -> None:
+        n, self.consecutive_timeouts = self.consecutive_timeouts, 0
+        if n >= self.QUIET_AFTER_TIMEOUTS:
+            print(f"[CIV] radio is answering again (after {n} timeouts)", flush=True)
 
     def send_raw(self, frame: bytes) -> Optional[bytes]:
         """Send a pre-built CI-V frame (for CAT passthrough). Returns body."""

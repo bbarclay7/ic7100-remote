@@ -110,6 +110,49 @@ class FairnessFlagsTests(unittest.TestCase):
         self.assertTrue(t._tls.in_poll)
 
 
+class SilentRadioLoggingTests(unittest.TestCase):
+    """A switched-off radio times out on every poll; the log must not fill up."""
+
+    class FakeSerial:
+        def __init__(self): self.reply = b''
+        in_waiting = property(lambda self: len(self.reply))
+        def write(self, b): pass
+        def reset_input_buffer(self): pass
+        def read(self, n):
+            out, self.reply = self.reply[:n], self.reply[n:]
+            return out
+
+    def _transport(self):
+        from ic7100ctl.civ import CIVTransport
+        t = CIVTransport('fake', timeout=0.01, poll_timeout=0.01)
+        t._serial = self.FakeSerial(); t.connected = True
+        return t
+
+    def test_only_the_first_timeout_and_one_summary_line_are_logged(self):
+        import io, contextlib
+        t = self._transport(); frame = t.build_frame(0x03)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            for _ in range(40):
+                self.assertIsNone(t.transact(frame))
+        lines = buf.getvalue().strip().splitlines()
+        self.assertEqual(len(lines), 2, lines)
+        self.assertIn('Timeout on cmd 0x03', lines[0])
+        self.assertIn('not answering', lines[1])
+        self.assertEqual(t.consecutive_timeouts, 40)
+
+    def test_recovery_is_logged_once_and_resets_the_count(self):
+        import io, contextlib
+        t = self._transport(); frame = t.build_frame(0x03)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            for _ in range(7): t.transact(frame)
+            t._serial.reply = bytes([0xFE, 0xFE, 0xE0, 0x88, 0xFB, 0xFD])   # radio answers: OK
+            self.assertEqual(t.transact(frame), b'\xfb')
+        self.assertEqual(t.consecutive_timeouts, 0)
+        self.assertIn('answering again (after 7 timeouts)', buf.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main()
 

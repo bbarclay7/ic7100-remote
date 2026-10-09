@@ -123,6 +123,16 @@ class ServerSmokeTests(unittest.TestCase):
         st = self._get_json('/ic7100/status')
         self.assertEqual((st['po'], st['swr'], st['alc']), (0, 0, 0))
 
+    def test_status_says_whether_the_radio_is_answering(self):
+        self.assertTrue(self._get_json('/ic7100/status')['radio_responding'])
+        self.transport.consecutive_timeouts = 9          # radio switched off
+        try:
+            self.server._refresh_state()
+            self.assertFalse(self._get_json('/ic7100/status')['radio_responding'])
+        finally:
+            del self.transport.consecutive_timeouts
+            self.server._refresh_state()
+
     def test_post_mode(self):
         r = self._post_json('/ic7100cmd', {'cmd': 'mode', 'mode': 'FM'})
         self.assertTrue(r['ok'])

@@ -262,7 +262,9 @@ class RadioServer:
                 traceback.print_exc()
 
             tick += 1
-            self._sleep(self.fast_interval)
+            # Radio not answering (off?): poll every 2 s instead of hammering the port.
+            silent = t is not None and getattr(t, 'consecutive_timeouts', 0) >= 5
+            self._sleep(2.0 if silent else self.fast_interval)
 
     def _sleep(self, secs: float) -> None:
         # Wake up promptly on stop.
@@ -284,6 +286,7 @@ class RadioServer:
             # here so audio_rx is always None (the panel treats that as
             # "no audio" — fine for standalone CI-V-only use).
             'connected':         connected,
+            'radio_responding':  getattr(getattr(r, 't', None), 'consecutive_timeouts', 0) < 3,
             'serial_connected':  connected,
             'endpoint_name':     'ic7100',
             'audio_rx':          bool(self.webrtc_bridge is not None),
