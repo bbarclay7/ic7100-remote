@@ -132,6 +132,17 @@ class TxGateTests(unittest.TestCase):
         bridge.radio.transmitting = True
         self.assertTrue(webrtc.WebRTCBridge._tx_gate(bridge))
 
+    def test_gate_is_open_while_a_hold_to_talk_key_is_held(self):
+        import types
+        from ic7100ctl import webrtc
+        radio = types.SimpleNamespace(transmitting=False, _ptt_deadline=None)
+        bridge = types.SimpleNamespace(radio=radio)
+        self.assertFalse(webrtc.WebRTCBridge._tx_gate(bridge))
+        radio._ptt_deadline = time.monotonic() + 1.5        # key-down in flight
+        self.assertTrue(webrtc.WebRTCBridge._tx_gate(bridge))
+        radio._ptt_deadline = None                          # released
+        self.assertFalse(webrtc.WebRTCBridge._tx_gate(bridge))
+
     def test_mic_audio_is_played_only_while_the_gate_is_open(self):
         try:
             import av

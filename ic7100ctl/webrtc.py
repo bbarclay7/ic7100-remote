@@ -164,8 +164,12 @@ class WebRTCBridge:
         return (time.monotonic() - _TX_STATE['t']) < 1.0
 
     def _tx_gate(self) -> bool:
-        """True while the radio is keyed: only then is browser mic audio played."""
-        return bool(getattr(self.radio, 'transmitting', False))
+        """True while the radio is keyed, or a hold-to-talk key is held: only
+        then is browser mic audio played. (The audio starts flowing the instant
+        the button goes down, a moment before the radio reports it is keyed.)"""
+        r = self.radio
+        return bool(getattr(r, 'transmitting', False)
+                    or getattr(r, '_ptt_deadline', None))
 
     def start(self) -> None:
         if self._thread:
