@@ -89,12 +89,17 @@ class RxAudioTrack(MediaStreamTrack if AIORTC_AVAILABLE else object):
 
 
 async def _consume_tx_track(track, playback: AlsaPlayback,
-                            stop: asyncio.Event):
+                            stop: asyncio.Event, gate=None):
     """Pull s16 audio frames from the browser's mic and play them.
 
     aiortc decodes incoming Opus → AudioFrame. The frame may not be at
     our target sample rate or layout, so we resample to 48 kHz mono s16
     using PyAV's AudioResampler.
+
+    If *gate* is given, frames are only played while it returns True (the
+    radio is keyed). Otherwise the mic audio would just pile up in the
+    codec's playback buffer, and the first words of a transmission would
+    be old audio.
     """
     resampler = av.AudioResampler(format='s16', layout='mono',
                                   rate=SAMPLE_RATE)
@@ -109,6 +114,8 @@ async def _consume_tx_track(track, playback: AlsaPlayback,
             resampled_frames = [resampled_frames]
         for rf in resampled_frames:
             if rf is None:
+                continue
+            if gate is not None and not gate():
                 continue
             buf = bytes(rf.planes[0])
             # aplay accepts arbitrary chunk sizes; no need to align to
@@ -138,6 +145,10 @@ class WebRTCBridge:
         self._consumer_tasks = []
         self._stop = asyncio.Event()
         self._started = threading.Event()
+
+    def _tx_gate(self) -> bool:
+        """True while the radio is keyed: only then is browser mic audio played."""
+        return bool(getattr(self.radio, 'transmitting', False))
 
     def start(self) -> None:
         if self._thread:
@@ -210,7 +221,8 @@ class WebRTCBridge:
         def on_track(track):
             if track.kind == "audio":
                 task = asyncio.ensure_future(
-                    _consume_tx_track(track, self.playback, consumer_stop))
+                    _consume_tx_track(track, self.playback, consumer_stop,
+                                      gate=self._tx_gate))
                 self._consumer_tasks.append(task)
 
         @pc.on("connectionstatechange")

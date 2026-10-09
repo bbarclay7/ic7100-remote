@@ -123,5 +123,45 @@ class WebRTCBridgeTests(unittest.TestCase):
             srv.stop()
 
 
+class TxGateTests(unittest.TestCase):
+    def test_gate_follows_the_radios_transmitting_flag(self):
+        import types
+        from ic7100ctl import webrtc
+        bridge = types.SimpleNamespace(radio=types.SimpleNamespace(transmitting=False))
+        self.assertFalse(webrtc.WebRTCBridge._tx_gate(bridge))
+        bridge.radio.transmitting = True
+        self.assertTrue(webrtc.WebRTCBridge._tx_gate(bridge))
+
+    def test_mic_audio_is_played_only_while_the_gate_is_open(self):
+        try:
+            import av
+        except ImportError:
+            self.skipTest('av not installed')
+        import struct
+        from ic7100ctl import webrtc
+
+        frame = av.AudioFrame(format='s16', layout='mono', samples=960)
+        frame.sample_rate = 48000
+        frame.planes[0].update(struct.pack('<960h', *([1000] * 960)))
+
+        class Track:
+            def __init__(self): self.n = 0
+            async def recv(self):
+                self.n += 1
+                if self.n > 3:
+                    raise RuntimeError('end')
+                return frame
+
+        class Sink:
+            def __init__(self): self.frames = 0
+            def write_frame(self, b): self.frames += 1
+
+        opens = iter([False, True, False])
+        sink = Sink()
+        asyncio.run(webrtc._consume_tx_track(Track(), sink, asyncio.Event(),
+                                             gate=lambda: next(opens)))
+        self.assertEqual(sink.frames, 1)       # only the frame that arrived while keyed
+
+
 if __name__ == '__main__':
     unittest.main()
