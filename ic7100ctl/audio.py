@@ -123,7 +123,15 @@ class AlsaCapture:
 
 
 class AlsaPlayback:
-    """Writes s16le 48 kHz mono PCM frames to an ALSA device via aplay."""
+    """Writes s16le 48 kHz mono PCM frames to an ALSA device via aplay.
+
+    `write_frame()` is called from the WebRTC asyncio loop, so it must never
+    block: it only queues the frame. A writer thread does the (blocking) pipe
+    write. If aplay can't keep up the oldest queued audio is dropped, so a
+    stalled codec can no longer freeze the RX audio or the peer connection.
+    """
+
+    QUEUE_FRAMES = 25            # ~0.5 s of 20 ms chunks
 
     def __init__(self, device: str, rate: int = SAMPLE_RATE,
                  channels: int = CHANNELS):
@@ -132,6 +140,9 @@ class AlsaPlayback:
         self.channels = channels
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
+        self._q: queue.Queue = queue.Queue(maxsize=self.QUEUE_FRAMES)
+        self._writer: Optional[threading.Thread] = None
+        self._stop = threading.Event()
 
     def start(self) -> None:
         with self._lock:
@@ -150,32 +161,62 @@ class AlsaPlayback:
             self._proc = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 bufsize=0)
+            self._stop.clear()
+            self._writer = threading.Thread(
+                target=self._write_loop, args=(self._proc,),
+                name='alsa-playback', daemon=True)
+            self._writer.start()
             print(f"[audio] playback started on {self.device}", flush=True)
 
-    def write_frame(self, frame: bytes) -> None:
-        with self._lock:
-            if not self._proc or not self._proc.stdin:
-                return
+    def _write_loop(self, proc) -> None:
+        while not self._stop.is_set():
             try:
-                self._proc.stdin.write(frame)
-            except (BrokenPipeError, OSError):
+                frame = self._q.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            try:
+                proc.stdin.write(frame)
+            except (BrokenPipeError, OSError, ValueError):
                 # Pipe closed (codec disappeared, aplay died, etc.) —
                 # mark dead so the next start() respawns.
-                self._proc = None
+                with self._lock:
+                    if self._proc is proc:
+                        self._proc = None
+                return
+
+    def write_frame(self, frame: bytes) -> None:
+        """Queue a frame without ever blocking the caller."""
+        try:
+            self._q.put_nowait(frame)
+        except queue.Full:
+            try:
+                self._q.get_nowait()          # drop the oldest
+            except queue.Empty:
+                pass
+            try:
+                self._q.put_nowait(frame)
+            except queue.Full:
+                pass
 
     def stop(self) -> None:
+        self._stop.set()
         with self._lock:
-            if self._proc:
-                try:
-                    if self._proc.stdin:
-                        self._proc.stdin.close()
-                except Exception:
-                    pass
-                try:
-                    self._proc.terminate()
-                    self._proc.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self._proc.kill()
-                except Exception:
-                    pass
-            self._proc = None
+            proc, self._proc = self._proc, None
+        if proc:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            except Exception:
+                pass
+        while not self._q.empty():
+            try:
+                self._q.get_nowait()
+            except queue.Empty:
+                break
