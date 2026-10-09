@@ -23,6 +23,7 @@ codec from the browser's mic is what the radio modulates.
 """
 from __future__ import annotations
 
+import array
 import asyncio
 import fractions
 import threading
@@ -91,7 +92,7 @@ class RxAudioTrack(MediaStreamTrack if AIORTC_AVAILABLE else object):
 
 # Monotonic time of the last mic frame from any browser; read by the server to
 # report whether TX audio is really arriving (see WebRTCBridge.mic_active).
-_TX_STATE = {'t': 0.0}
+_TX_STATE = {'t': 0.0, 'n': 0, 'fwd': 0, 'peak': 0}   # last frame time; frames received / played; peak played
 
 
 async def _consume_tx_track(track, playback: AlsaPlayback,
@@ -115,6 +116,7 @@ async def _consume_tx_track(track, playback: AlsaPlayback,
         except Exception:
             break
         _TX_STATE['t'] = time.monotonic()
+        _TX_STATE['n'] += 1
         resampled_frames = resampler.resample(frame)
         # PyAV ≥ 9 returns a list; older returns a single frame. Normalise.
         if not isinstance(resampled_frames, list):
@@ -125,6 +127,10 @@ async def _consume_tx_track(track, playback: AlsaPlayback,
             if gate is not None and not gate():
                 continue
             buf = bytes(rf.planes[0])
+            _TX_STATE['fwd'] += 1
+            pcm = array.array('h')
+            pcm.frombytes(buf[:len(buf) & ~1])
+            _TX_STATE['peak'] = max(_TX_STATE['peak'], max(map(abs, pcm), default=0))
             # aplay accepts arbitrary chunk sizes; no need to align to
             # our 20 ms frame boundary.
             playback.write_frame(buf)

@@ -172,5 +172,35 @@ class MicActiveTests(unittest.TestCase):
         self.assertFalse(webrtc.WebRTCBridge.mic_active(None))
 
 
+class TxPeakTests(unittest.TestCase):
+    def test_peak_of_audio_played_to_the_radio_is_tracked(self):
+        try:
+            import av
+        except ImportError:
+            self.skipTest('av not installed')
+        import struct
+        from ic7100ctl import webrtc
+
+        pcm = [0] * 960; pcm[100] = -12000                               # one loud sample
+        frame = av.AudioFrame(format='s16', layout='mono', samples=960); frame.sample_rate = 48000
+        frame.planes[0].update(struct.pack('<960h', *pcm))
+
+        class Track:
+            def __init__(self): self.n = 0
+            async def recv(self):
+                self.n += 1
+                if self.n > 1:
+                    raise RuntimeError('end')
+                return frame
+
+        class Sink:
+            def write_frame(self, b): pass
+
+        webrtc._TX_STATE.update(peak=0, n=0, fwd=0)
+        asyncio.run(webrtc._consume_tx_track(Track(), Sink(), asyncio.Event(), gate=lambda: True))
+        self.assertEqual(webrtc._TX_STATE['peak'], 12000)
+        self.assertEqual((webrtc._TX_STATE['n'], webrtc._TX_STATE['fwd']), (1, 1))
+
+
 if __name__ == '__main__':
     unittest.main()

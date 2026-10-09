@@ -35,6 +35,7 @@ inject a mock transport that quacks like `CIVTransport`.
 from __future__ import annotations
 
 import json
+import math
 import mimetypes
 import os
 import threading
@@ -119,7 +120,8 @@ class RadioServer:
         else:
             self._connected = True
 
-        self.radio.on_tx_end = self._tx_ended       # one-line log per transmit
+        self.radio.on_tx_start = self._tx_started   # one-line log per transmit
+        self.radio.on_tx_end = self._tx_ended
         self._refresh_state()  # seed initial snapshot
 
         self._poll_stop.clear()
@@ -167,11 +169,29 @@ class RadioServer:
 
     # ----- polling -----
 
+    def _tx_started(self) -> None:
+        from . import webrtc
+        self._tx_frames0 = (webrtc._TX_STATE['n'], webrtc._TX_STATE['fwd'])
+        webrtc._TX_STATE['peak'] = 0
+
     def _tx_ended(self, s: dict) -> None:
-        """One log line per transmit: what actually went out."""
-        print(f"[tx] {s['secs']:.1f} s on {s['freq_hz'] / 1e6:.4f} MHz {s['mode']} "
-              f"(DATA {'on' if s['data_mode'] else 'off'}, power set {s['rf_power']}%) | "
-              f"peaks raw: Po {s['po']} ALC {s['alc']} SWR {s['swr']}", flush=True)
+        """One log line per transmit: what actually went out and, in DATA mode
+        (where the browser's mic is the modulation source), whether that audio
+        reached the radio."""
+        line = (f"[tx] {s['secs']:.1f} s on {s['freq_hz'] / 1e6:.4f} MHz {s['mode']} "
+                f"(DATA {'on' if s['data_mode'] else 'off'}, power set {s['rf_power']}%) | "
+                f"peaks raw: Po {s['po']} ALC {s['alc']} SWR {s['swr']}")
+        if s['data_mode'] and self.webrtc_bridge is not None:
+            from . import webrtc
+            n0, f0 = getattr(self, '_tx_frames0', (0, 0))
+            got, fwd = webrtc._TX_STATE['n'] - n0, webrtc._TX_STATE['fwd'] - f0
+            pk = webrtc._TX_STATE['peak']
+            level = f"{20 * math.log10(pk / 32768):.0f} dBFS" if pk else 'SILENT'
+            line += (f" | browser mic frames: {got} received, {fwd} sent to the radio"
+                     f" | mic peak {level}")
+            if not (fwd and pk):
+                line += " | WARNING: no mic audio reached the radio"
+        print(line, flush=True)
 
     def _poll_loop(self) -> None:
         t = getattr(self.radio, 't', None) or getattr(self.radio, 'transport', None)

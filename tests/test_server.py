@@ -176,6 +176,48 @@ class InputActiveTests(unittest.TestCase):
         self.assertFalse(server.state['input_active'])
 
 
+class TxLogMicTests(unittest.TestCase):
+    """In DATA mode the log line says whether the browser's mic audio reached the radio."""
+    def _line(self, data_mode, frames_in, frames_fwd, peak, with_bridge=True):
+        import contextlib, io
+        from ic7100ctl import webrtc
+
+        class FakeBridge:
+            def mic_active(self): return True
+
+        radio = IC7100(MockCIVTransport(civ_addr=0x88))
+        server = RadioServer(radio, host='127.0.0.1', port=_free_port(),
+                             webrtc_bridge=FakeBridge() if with_bridge else None)
+        server._tx_started()
+        webrtc._TX_STATE['n'] += frames_in; webrtc._TX_STATE['fwd'] += frames_fwd
+        webrtc._TX_STATE['peak'] = peak
+        s = dict(secs=2.0, freq_hz=3_758_000, mode='LSB', data_mode=data_mode, rf_power=10, po=1, alc=2, swr=0)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            server._tx_ended(s)
+        return out.getvalue()
+
+    def test_audio_that_arrived_is_reported_with_its_level(self):
+        line = self._line(True, 100, 100, 16384)
+        self.assertIn('browser mic frames: 100 received, 100 sent to the radio', line)
+        self.assertIn('mic peak -6 dBFS', line)
+        self.assertNotIn('WARNING', line)
+
+    def test_silence_or_no_frames_is_flagged(self):
+        line = self._line(True, 100, 100, 0)
+        self.assertIn('mic peak SILENT', line)
+        self.assertIn('WARNING: no mic audio reached the radio', line)
+        self.assertIn('WARNING', self._line(True, 0, 0, 0))
+
+    def test_hand_mic_transmissions_do_not_warn(self):
+        line = self._line(False, 0, 0, 0)
+        self.assertNotIn('browser mic', line)
+        self.assertNotIn('WARNING', line)
+
+    def test_no_audio_bridge_means_no_mic_section(self):
+        self.assertNotIn('browser mic', self._line(True, 0, 0, 0, with_bridge=False))
+
+
 class TxLogLineTests(unittest.TestCase):
     def test_one_line_per_transmit(self):
         import contextlib, io
