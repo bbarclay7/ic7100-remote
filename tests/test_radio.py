@@ -144,6 +144,34 @@ class SmokeTests(unittest.TestCase):
                             f"{name} missing or not callable")
 
 
+class TxSummaryHookTests(unittest.TestCase):
+    def test_hooks_fire_with_the_peaks_of_one_transmit(self):
+        t = MockCIVTransport(); r = IC7100(t)
+        started, ended = [], []
+        r.on_tx_start = lambda: started.append(1)
+        r.on_tx_end = ended.append
+        r.freq_hz, r.mode, r.rf_power = 3_758_000, 'LSB', 25
+        r.set_ptt(True)
+        self.assertEqual(started, [1])
+        for po, alc, swr in ((12, 40, 3), (58, 78, 5), (30, 20, 1)):
+            r.po, r.alc, r.swr = po, alc, swr
+            r._note_tx_peaks()
+        r.set_ptt(False)
+        self.assertEqual(len(ended), 1)
+        s = ended[0]
+        self.assertEqual((s['po'], s['alc'], s['swr']), (58, 78, 5))     # the peaks, not the last values
+        self.assertEqual((s['freq_hz'], s['mode'], s['rf_power']), (3_758_000, 'LSB', 25))
+        self.assertGreaterEqual(s['secs'], 0)
+        self.assertEqual((r.po, r.alc, r.swr), (0, 0, 0))                # and the meters are wiped as before
+
+    def test_a_broken_hook_never_breaks_ptt(self):
+        t = MockCIVTransport(); r = IC7100(t)
+        def boom(*a): raise RuntimeError('logging failed')
+        r.on_tx_start = boom; r.on_tx_end = boom
+        self.assertTrue(r.set_ptt(True))
+        self.assertTrue(r.set_ptt(False))
+
+
 if __name__ == '__main__':
     unittest.main()
 

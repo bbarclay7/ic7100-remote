@@ -176,5 +176,20 @@ class InputActiveTests(unittest.TestCase):
         self.assertFalse(server.state['input_active'])
 
 
+class TxLogLineTests(unittest.TestCase):
+    def test_one_line_per_transmit(self):
+        import contextlib, io
+        radio = IC7100(MockCIVTransport(civ_addr=0x88))
+        server = RadioServer(radio, host='127.0.0.1', port=_free_port())
+        s = dict(secs=2.7, freq_hz=3_758_000, mode='LSB', data_mode=True, rf_power=10, po=40, alc=155, swr=3)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            server._tx_ended(s)
+        line = out.getvalue()
+        self.assertEqual(line.count('\n'), 1)
+        self.assertIn('[tx] 2.7 s on 3.7580 MHz LSB (DATA on, power set 10%)', line)
+        self.assertIn('Po 40 ALC 155 SWR 3', line)
+
+
 if __name__ == '__main__':
     unittest.main()

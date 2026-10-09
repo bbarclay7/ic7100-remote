@@ -119,6 +119,7 @@ class RadioServer:
         else:
             self._connected = True
 
+        self.radio.on_tx_end = self._tx_ended       # one-line log per transmit
         self._refresh_state()  # seed initial snapshot
 
         self._poll_stop.clear()
@@ -165,6 +166,12 @@ class RadioServer:
         return cls(radio, **kwargs)
 
     # ----- polling -----
+
+    def _tx_ended(self, s: dict) -> None:
+        """One log line per transmit: what actually went out."""
+        print(f"[tx] {s['secs']:.1f} s on {s['freq_hz'] / 1e6:.4f} MHz {s['mode']} "
+              f"(DATA {'on' if s['data_mode'] else 'off'}, power set {s['rf_power']}%) | "
+              f"peaks raw: Po {s['po']} ALC {s['alc']} SWR {s['swr']}", flush=True)
 
     def _poll_loop(self) -> None:
         t = getattr(self.radio, 't', None) or getattr(self.radio, 'transport', None)

@@ -230,6 +230,12 @@ class IC7100:
         self.po: int = 0
         self.swr: int = 0
         self.alc: int = 0
+        # Optional hooks, called when a transmit starts / ends (the server logs a
+        # one-line summary from these). on_tx_end gets a dict, see _finish_tx().
+        self.on_tx_start = None
+        self.on_tx_end = None
+        self._tx_t0 = 0.0
+        self._tx_peaks = {}
 
         # DATA mode (USB-D / FM-D / etc.) — controls which MOD INPUT the radio
         # uses on TX. With DATA OFF MOD=MIC and DATA MOD=USB configured on
@@ -370,9 +376,40 @@ class IC7100:
         """Record the TX state. Po/SWR/ALC are only read while transmitting, so
         they keep their last value in between; wipe them whenever the state
         flips so a new key-up never starts by showing the previous transmit."""
-        if bool(on) != self.transmitting:
+        on = bool(on)
+        if on != self.transmitting:
+            if on:
+                self._tx_t0 = time.monotonic()
+                self._tx_peaks = {'po': 0, 'alc': 0, 'swr': 0}
+                self._fire(self.on_tx_start, None)
+            else:
+                self._finish_tx()
             self.po = self.swr = self.alc = 0
-        self.transmitting = bool(on)
+        self.transmitting = on
+
+    def _note_tx_peaks(self) -> None:
+        pk = self._tx_peaks
+        if not pk:
+            return
+        for k, v in (('po', self.po), ('alc', self.alc), ('swr', self.swr)):
+            pk[k] = max(pk[k], v)
+
+    def _finish_tx(self) -> None:
+        """Summarise the transmit that just ended (raw 0-255 meter values)."""
+        summary = {'secs': time.monotonic() - self._tx_t0, 'freq_hz': self.freq_hz,
+                   'mode': self.mode, 'data_mode': self.data_mode,
+                   'rf_power': self.rf_power}
+        summary.update(self._tx_peaks)
+        self._fire(self.on_tx_end, summary)
+
+    @staticmethod
+    def _fire(cb, arg) -> None:
+        if cb is None:
+            return
+        try:
+            cb() if arg is None else cb(arg)
+        except Exception as e:          # a logging hook must never break CI-V
+            print(f"[radio] tx hook error: {e}", flush=True)
 
     def get_ptt(self) -> Optional[bool]:
         resp = self._txn(0x1c, subcmd=0x00)
@@ -936,6 +973,7 @@ class IC7100:
         self.get_po()
         self.get_swr()
         self.get_alc()
+        self._note_tx_peaks()
 
     # -- Settings persistence (JSON, XDG path) --
 
