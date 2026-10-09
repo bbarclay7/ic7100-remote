@@ -128,11 +128,24 @@ class RadioServer:
         self._poll_thread = threading.Thread(
             target=self._poll_loop, name='ic7100-poll', daemon=True)
         self._poll_thread.start()
+        threading.Thread(target=self._ptt_watchdog, name='ic7100-ptt-wd',
+                         daemon=True).start()
 
         handler = _make_handler(self)
         self._httpd = ThreadingHTTPServer((self.host, self.port), handler)
         print(f"[RadioServer] Listening on http://{self.host}:{self.port}",
               flush=True)
+
+    def _ptt_watchdog(self) -> None:
+        """Unkey if hold-to-talk keepalives stop arriving."""
+        while not self._poll_stop.wait(0.25):
+            r = self.radio
+            dl = getattr(r, '_ptt_deadline', None)
+            if dl is not None and time.monotonic() > dl:
+                r._ptt_deadline = None
+                if getattr(r, 'transmitting', False):
+                    print("[RadioServer] PTT hold lapsed, unkeying", flush=True)
+                    r.set_ptt(False)
 
     def serve_forever(self) -> None:
         if self._httpd is None:
@@ -472,11 +485,25 @@ def _tx_only(r, attr: str) -> int:
     return int(getattr(r, attr, 0) or 0) if getattr(r, 'transmitting', False) else 0
 
 
+PTT_HOLD_TIMEOUT = 1.5  # s without a hold keepalive before auto-unkey
+
+
 def _cmd_ptt(r, p):
     if 'state' in p:
         on = bool(p['state'])
     else:
         on = not bool(getattr(r, 'transmitting', False))
+    if on and p.get('hold'):
+        # Hold-to-talk: the page re-sends this every ~500 ms while the button
+        # (or Space) is held; the watchdog unkeys if the keepalives stop
+        # (tab closed, network drop), so the radio can never stay keyed.
+        if p.get('keepalive') and not getattr(r, 'transmitting', False):
+            return _ok({'ptt': False})   # late keepalive after release: never re-key
+        r._ptt_deadline = time.monotonic() + PTT_HOLD_TIMEOUT
+        if getattr(r, 'transmitting', False):
+            return _ok({'ptt': True})    # keepalive only, already keyed
+    else:
+        r._ptt_deadline = None
     ok = r.set_ptt(on)
     return _ok({'ptt': on}) if ok else _fail('set_ptt NG')
 

@@ -236,6 +236,7 @@ class IC7100:
         self.on_tx_end = None
         self._tx_t0 = 0.0
         self._tx_peaks = {}
+        self._ptt_deadline: Optional[float] = None   # hold-to-talk: unkey after this (server watchdog)
 
         # DATA mode (USB-D / FM-D / etc.) — controls which MOD INPUT the radio
         # uses on TX. With DATA OFF MOD=MIC and DATA MOD=USB configured on

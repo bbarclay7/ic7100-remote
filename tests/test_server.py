@@ -139,6 +139,31 @@ class ServerSmokeTests(unittest.TestCase):
                 self.assertEqual(r.status, 200, path)
                 self.assertEqual(r.headers.get('Cache-Control'), 'no-cache', path)
 
+    def test_late_keepalive_does_not_rekey(self):
+        def key_frames():
+            return [f for f in self.transport.sent
+                    if f[4] == 0x1c and f[5] == 0x00 and f[6] == 0x01]
+        self.assertFalse(self.radio.transmitting)
+        n = len(key_frames())
+        r = self._post_json('/ic7100cmd', {'cmd': 'ptt', 'state': True, 'hold': True, 'keepalive': True})
+        self.assertTrue(r['ok'])
+        self.assertFalse(self.radio.transmitting)
+        self.assertEqual(len(key_frames()), n)   # nothing was sent to key the radio
+
+    def test_ptt_hold_unkeys_when_keepalives_stop(self):
+        def ptt_frames():
+            # key/unkey frames carry a data byte; the poller's reads (1c 00 FD) don't
+            return [f for f in self.transport.sent
+                    if f[4] == 0x1c and f[5] == 0x00 and f[6] in (0x00, 0x01)]
+        n = len(ptt_frames())
+        self._post_json('/ic7100cmd', {'cmd': 'ptt', 'state': True, 'hold': True})
+        self._post_json('/ic7100cmd', {'cmd': 'ptt', 'state': True, 'hold': True})
+        self.assertTrue(self.radio.transmitting)
+        self.assertEqual(len(ptt_frames()) - n, 1)  # keepalive does not re-key
+        time.sleep(2.2)  # PTT_HOLD_TIMEOUT 1.5 s + watchdog tick
+        self.assertFalse(self.radio.transmitting)
+        self.assertEqual(len(ptt_frames()) - n, 2)  # key + auto-unkey
+
     def test_post_mode(self):
         r = self._post_json('/ic7100cmd', {'cmd': 'mode', 'mode': 'FM'})
         self.assertTrue(r['ok'])
