@@ -163,5 +163,14 @@ class TxGateTests(unittest.TestCase):
         self.assertEqual(sink.frames, 1)       # only the frame that arrived while keyed
 
 
+class MicActiveTests(unittest.TestCase):
+    def test_mic_active_only_while_frames_are_recent(self):
+        from ic7100ctl import webrtc
+        webrtc._TX_STATE['t'] = time.monotonic()
+        self.assertTrue(webrtc.WebRTCBridge.mic_active(None))
+        webrtc._TX_STATE['t'] = time.monotonic() - 5
+        self.assertFalse(webrtc.WebRTCBridge.mic_active(None))
+
+
 if __name__ == '__main__':
     unittest.main()

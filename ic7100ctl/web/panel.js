@@ -812,7 +812,9 @@ function pollStatus() {
     }
     var audEl = document.getElementById('ic-audio-state');
     if (audEl) {
-      audEl.textContent = audio ? 'streaming' : 'no audio';
+      audEl.textContent = !audio ? 'no audio'
+        : window._micOk === false ? 'RX only, NO MIC' : 'streaming';
+      audEl.title = (audio && window._micOk === false) ? ('No microphone: ' + window._micWhy) : '';
       audEl.className = 'ic-val ' + (audio ? 'ok' : 'err');
     }
 
@@ -1021,6 +1023,10 @@ if (document.readyState === 'loading') {
         // RX-only fallback — keep going.
       }
     }
+    window._micOk = !!micStream;
+    window._micWhy = micStream ? '' : (window.isSecureContext
+      ? 'microphone permission was denied, or no microphone was found'
+      : 'this page is not https, so the browser blocks the microphone');
     pc = new RTCPeerConnection({ iceServers: [] });
     if (micStream) {
       pc.addTransceiver('audio', { direction: 'sendrecv' });
@@ -1097,6 +1103,7 @@ if (document.readyState === 'loading') {
       micStream = null;
     }
     rxEl.srcObject = null;
+    window._micOk = undefined; window._micWhy = '';
     btn.textContent = 'Start audio';
     btn.disabled = false;
     setStatus('audio: off');

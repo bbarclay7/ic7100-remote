@@ -144,5 +144,37 @@ class ServerSmokeTests(unittest.TestCase):
             self.assertLess(e.code, 500, "unknown cmd should not 500")
 
 
+class InputActiveTests(unittest.TestCase):
+    """input_active used to be hard-coded False; it must follow the browser's mic stream."""
+    def test_status_reports_whether_mic_audio_is_arriving(self):
+        class FakeBridge:
+            active = False
+            def mic_active(self): return self.active
+
+        bridge = FakeBridge()
+        radio = IC7100(MockCIVTransport(civ_addr=0x88))
+        port = _free_port()
+        server = RadioServer(radio, host='127.0.0.1', port=port, webrtc_bridge=bridge)
+        server.start()
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        time.sleep(0.1)
+        try:
+            def status():
+                server._refresh_state()
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/ic7100/status', timeout=2) as r:
+                    return json.loads(r.read().decode())
+            self.assertFalse(status()['input_active'])
+            bridge.active = True
+            self.assertTrue(status()['input_active'])
+        finally:
+            server.stop()
+
+    def test_no_bridge_means_no_input(self):
+        radio = IC7100(MockCIVTransport(civ_addr=0x88))
+        server = RadioServer(radio, host='127.0.0.1', port=_free_port())
+        server._refresh_state()
+        self.assertFalse(server.state['input_active'])
+
+
 if __name__ == '__main__':
     unittest.main()

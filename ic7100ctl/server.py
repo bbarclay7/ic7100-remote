@@ -261,7 +261,8 @@ class RadioServer:
             'endpoint_name':     'ic7100',
             'audio_rx':          bool(self.webrtc_bridge is not None),
             'audio_enabled':     bool(self.webrtc_bridge is not None),
-            'input_active':      False,
+            'input_active':      bool(self.webrtc_bridge is not None
+                                      and self.webrtc_bridge.mic_active()),
             'rx_muted':          False,
             # Frequency / mode
             'freq':              (freq_hz / 1e6) if freq_hz else 0.0,

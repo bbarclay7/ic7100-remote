@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import fractions
 import threading
+import time
 from typing import Optional
 
 try:
@@ -88,6 +89,11 @@ class RxAudioTrack(MediaStreamTrack if AIORTC_AVAILABLE else object):
         return frame
 
 
+# Monotonic time of the last mic frame from any browser; read by the server to
+# report whether TX audio is really arriving (see WebRTCBridge.mic_active).
+_TX_STATE = {'t': 0.0}
+
+
 async def _consume_tx_track(track, playback: AlsaPlayback,
                             stop: asyncio.Event, gate=None):
     """Pull s16 audio frames from the browser's mic and play them.
@@ -108,6 +114,7 @@ async def _consume_tx_track(track, playback: AlsaPlayback,
             frame = await track.recv()
         except Exception:
             break
+        _TX_STATE['t'] = time.monotonic()
         resampled_frames = resampler.resample(frame)
         # PyAV ≥ 9 returns a list; older returns a single frame. Normalise.
         if not isinstance(resampled_frames, list):
@@ -145,6 +152,10 @@ class WebRTCBridge:
         self._consumer_tasks = []
         self._stop = asyncio.Event()
         self._started = threading.Event()
+
+    def mic_active(self) -> bool:
+        """True while browser mic audio has arrived in the last second."""
+        return (time.monotonic() - _TX_STATE['t']) < 1.0
 
     def _tx_gate(self) -> bool:
         """True while the radio is keyed: only then is browser mic audio played."""
