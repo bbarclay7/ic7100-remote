@@ -1114,3 +1114,72 @@ if (document.readyState === 'loading') {
     else startAudio();
   });
 })();
+
+
+// ── Hold-to-talk PTT ────────────────────────────────────────────────────
+// Press and hold to transmit. Keepalives every 500 ms; the server unkeys by
+// itself if they stop. Any loss of focus/visibility/pointer releases.
+(function () {
+  var btn = document.getElementById('ic-ptt-btn');
+  if (!btn) return;
+  var held = false, timer = null, kaPending = false;
+  // Requests go out strictly in order (a release can never overtake the key-down),
+  // and at most one keepalive is queued at a time.
+  var chain = Promise.resolve();
+  function send(on, keepalive) {
+    var body = {cmd: 'ptt', state: on, hold: on};
+    if (keepalive) body.keepalive = true;   // server never re-keys on a keepalive
+    chain = chain.then(function () { return icPost(body); }).catch(function () {});
+    return chain;
+  }
+  function start() {
+    if (held) return;
+    held = true;
+    if (window._micOk === false) {          // keying works, but nothing will modulate it
+      icFeedback('No mic: ' + window._micWhy, true);
+    }
+    btn.classList.add('active');            // immediate feedback
+    send(true).then(function (d) {          // refused (e.g. radio error): drop the held look
+      if (d && d.ok === false) btn.classList.remove('active');
+    });
+    timer = setInterval(function () {
+      if (kaPending) return;
+      kaPending = true;
+      send(true, true).then(function () { kaPending = false; });
+    }, 500);
+  }
+  function stop() {
+    if (!held) return;
+    held = false;
+    clearInterval(timer); timer = null;
+    send(false).then(pollStatus);
+  }
+  function down(e) {
+    e.preventDefault();
+    try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+    start();
+  }
+  btn.addEventListener('pointerdown', down);
+  btn.addEventListener('pointerup', stop);
+  btn.addEventListener('pointercancel', stop);
+  btn.addEventListener('lostpointercapture', stop);
+  btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  window.addEventListener('blur', stop);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) stop(); });
+
+  // Space bar = PTT while held (not while typing in a field).
+  function typing() {
+    var a = document.activeElement;
+    return a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.code !== 'Space' || typing()) return;
+    e.preventDefault();  // always, incl. auto-repeats, or the page scrolls while held
+    if (!e.repeat) start();
+  });
+  document.addEventListener('keyup', function (e) {
+    if (e.code !== 'Space') return;
+    e.preventDefault();
+    stop();
+  });
+})();
