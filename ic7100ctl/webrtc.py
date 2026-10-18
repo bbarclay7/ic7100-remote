@@ -110,7 +110,10 @@ async def _consume_tx_track(track, playback: AlsaPlayback,
         for rf in resampled_frames:
             if rf is None:
                 continue
-            buf = bytes(rf.planes[0])
+            # The plane buffer is padded for alignment (960 samples arrive as
+            # 1984 bytes): send only the real mono s16 samples, or every 20 ms
+            # frame is followed by 32 zero samples (a 48 Hz gap in the audio).
+            buf = bytes(rf.planes[0])[:rf.samples * 2]
             # aplay accepts arbitrary chunk sizes; no need to align to
             # our 20 ms frame boundary.
             playback.write_frame(buf)

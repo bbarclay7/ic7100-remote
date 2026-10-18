@@ -125,3 +125,32 @@ class WebRTCBridgeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TxFramePaddingTests(unittest.TestCase):
+    def test_forwarded_audio_has_no_alignment_padding(self):
+        # Decoded Opus arrives as 960 stereo samples; after resampling to mono the
+        # plane buffer is padded (1984 bytes). Only the 960 real samples may reach the radio.
+        try:
+            import av
+        except ImportError:
+            self.skipTest('av not installed')
+        from ic7100ctl import webrtc
+
+        frame = av.AudioFrame(format='s16', layout='stereo', samples=960); frame.sample_rate = 48000
+        for plane in frame.planes:
+            plane.update(bytes(len(bytes(plane))))
+        got = []
+
+        class Track:
+            def __init__(self): self.n = 0
+            async def recv(self):
+                self.n += 1
+                if self.n > 2: raise RuntimeError('end')
+                return frame
+
+        class Sink:
+            def write_frame(self, b): got.append(len(b))
+
+        asyncio.run(webrtc._consume_tx_track(Track(), Sink(), asyncio.Event()))
+        self.assertEqual(sum(got), 2 * 960 * 2)
